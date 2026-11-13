@@ -333,7 +333,8 @@ label.f textarea{min-height:70px;resize:vertical}
 .login p{margin:0;color:var(--muted);font-size:13.5px}
 .login .err{color:var(--bad)}
 .gbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:10px 14px;font-size:15px}
-#who{font-family:var(--mono)}
+#who,#upd{font-family:var(--mono)}
+#upd{color:var(--fg)}
 </style>
 </head><body>
 <div class="login" id="login" hidden><div class="box"><h1>Crosby Produktionsplan</h1><p>Logga in med ditt Crosby-konto.</p><button type="button" class="btn primary gbtn" id="gLogin">Logga in med Google</button><p id="loginMsg"></p></div></div>
@@ -341,7 +342,7 @@ label.f textarea{min-height:70px;resize:vertical}
 <div class="wrap">
   <header class="top">
     <h1>Crosby Produktionsplan<small id="sub">Beläggning per person · FM/EM · delad med teamet</small></h1>
-    <div class="bar"><span id="note" class="note" role="status"></span><span id="who" class="syncst"></span><button type="button" class="btn" id="logout" hidden>Logga ut</button><button type="button" class="btn" id="themeBtn" title="Byt till nattläge" aria-label="Byt till nattläge">☾</button></div>
+    <div class="bar"><span id="note" class="note" role="status"></span><span id="upd" class="syncst" title="När planen senast hämtade från Monday och tidsplanerna"></span><span id="who" class="syncst"></span><button type="button" class="btn" id="logout" hidden>Logga ut</button><button type="button" class="btn" id="themeBtn" title="Byt till nattläge" aria-label="Byt till nattläge">☾</button></div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Vy">
@@ -840,6 +841,8 @@ render();
   $("#gLogin").onclick=()=>sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname,queryParams:{hd:"crosby.se",prompt:"select_account"}}});
   $("#logout").onclick=async()=>{await sb.auth.signOut();location.reload()};
   let started=false;
+  function showUpd(d){const el=$("#upd");if(!d?.at){el.textContent="";return}const t=new Date(d.at);
+    el.textContent=`Uppdaterad ${DAYN[t.getDay()]} ${t.getDate()} ${MON[t.getMonth()]} ${pad(t.getHours())}.${pad(t.getMinutes())}`}
   async function start(session){
     const email=(session?.user?.email||"").toLowerCase();
     if(!session){login.hidden=false;return}
@@ -853,8 +856,9 @@ render();
           for(const r of data)o[r.id]=r.data;if(data.length<1000)break;from+=1000}
         S[col]=o}
       setNote(Object.keys(S.people).length?"":"Tomt än – lägg till personer och produktioner med plus.");render();
+      const{data:m}=await sb.from("meta").select("data").eq("id","sync").maybeSingle();showUpd(m?.data);
     }catch(e){setNote("Kunde inte ladda planeringen – ladda om sidan.");return}
-    let ch=sb.channel("plan");
+    let ch=sb.channel("plan").on("postgres_changes",{event:"*",schema:"public",table:"meta"},p=>{if(p.new?.id==="sync")showUpd(p.new.data)});
     for(const col of COLS)ch=ch.on("postgres_changes",{event:"*",schema:"public",table:col},p=>{
       const n={...S[col]};if(p.eventType==="DELETE"){delete n[p.old.id]}else{n[p.new.id]=p.new.data}S[col]=n;render()});
     ch.subscribe(st=>{if(st==="CHANNEL_ERROR"||st==="TIMED_OUT")setNote("Tappade liveanslutningen – ladda om sidan för senaste läget.");else if(st==="SUBSCRIBED"&&/liveanslutningen/.test($("#note").textContent))setNote("")});
